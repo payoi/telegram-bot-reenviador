@@ -1,182 +1,91 @@
 import asyncio
 import os
 import re
-from telethon import TelegramClient, events, Button
+from telethon import TelegramClient, events
 
-# ⚙️ Variables de entorno
 api_id = int(os.getenv('API_ID'))
 api_hash = os.getenv('API_HASH')
 tu_canal = int(os.getenv('TU_CANAL'))
 canales_origen = [int(x.strip()) for x in os.getenv('CANALES_ORIGEN').split(',')]
 
-# 🎨 Tu firma personalizada (cámbiala como quieras)
-MI_FIRMA = "\n\n🔔 Únete: @NotiGlobalVE"  # Cambia esto por tu marca
+MI_FIRMA = "\n\n🔔 Únete: @NotiGlobalVE"
 
-# Diccionario para guardar mensajes pendientes
+auto_env = os.getenv('CANALES_AUTOMATICOS', '')
+CANALES_AUTOMATICOS = [int(x.strip()) for x in auto_env.split(',') if x.strip()] if auto_env else []
+
 mensajes_pendientes = {}
+ultimo_msg_id = None
 
 async def limpiar_texto(texto):
-    """Elimina menciones y links del canal original"""
     if not texto:
         return texto
-    
-    # Eliminar menciones de canales (@nombrecanal)
     texto = re.sub(r'@\w+', '', texto)
-    
-    # Eliminar URLs de Telegram
     texto = re.sub(r'https?://t\.me/\S+', '', texto)
-    
-    # Limpiar espacios múltiples
     texto = re.sub(r'\n{3,}', '\n\n', texto)
-    texto = texto.strip()
-    
-    return texto
+    return texto.strip()
 
 async def main():
+    global ultimo_msg_id
     client = TelegramClient('reenviador', api_id, api_hash)
-    
+
     @client.on(events.NewMessage(chats=canales_origen))
     async def nuevo_mensaje(event):
+        global ultimo_msg_id
         if not event.message.message and not event.message.media:
             return
-
         msg_id = event.message.id
         chat_id = event.chat_id
-        
-        # Guardar mensaje original
-        mensajes_pendientes[msg_id] = {
-            'chat_id': chat_id,
-            'mensaje': event.message
-        }
-        
-        # Preparar vista previa
-        texto_limpio = await limpiar_texto(event.message.message)
-
-if texto_limpio:
-    preview = texto_limpio  # Sin "MENSAJE NUEVO"
-else:
-    preview = "📷 Multimedia"
-
-botones = [
-    [
-        Button.inline("✅ PUBLICAR", f"pub_{msg_id}"),
-        Button.inline("✏️ EDITAR", f"edit_{msg_id}")
-    ],
-    [
-        Button.inline("❌ DESCARTAR", f"del_{msg_id}")
-    ]
-]
-
-await client.send_message(
-    'me',
-    preview,  # Sin la marca "De: Canal"
-    buttons=botones,
-    link_preview=False
-)
-
-    @client.on(events.CallbackQuery)
-    async def callback(event):
-        data = event.data.decode()
-        partes = data.split('_')
-        accion = partes[0]
-        msg_id = int(partes[1])
-        
-        if msg_id not in mensajes_pendientes:
-            await event.answer("⚠️ Mensaje expirado", alert=True)
-            return
-        
-        mensaje_orig = mensajes_pendientes[msg_id]['mensaje']
-        chat_id = mensajes_pendientes[msg_id]['chat_id']
-        
-        if accion == "pub":
-            # Publicar con firma
-            texto_limpio = await limpiar_texto(mensaje_orig.message)
-            
-            if texto_limpio:
-                texto_final = texto_limpio + MI_FIRMA
-            else:
-                texto_final = MI_FIRMA
-            
-            # Reenviar el mensaje
-            if mensaje_orig.media:
-                await client.send_file(
-                    tu_canal,
-                    mensaje_orig.media,
-                    caption=texto_final if texto_final != MI_FIRMA else None
-                )
+        if chat_id in CANALES_AUTOMATICOS:
+            texto_limpio = await limpiar_texto(event.message.message)
+            texto_final = (texto_limpio + MI_FIRMA) if texto_limpio else MI_FIRMA
+            if event.message.media:
+                await client.send_file(tu_canal, event.message.media, caption=texto_final if texto_final != MI_FIRMA else None)
             else:
                 await client.send_message(tu_canal, texto_final)
-            
-            await event.edit("✅ ¡Publicado en tu canal!")
-            del mensajes_pendientes[msg_id]
-        
-        elif accion == "edit":
-            await event.edit(
-                "✏️ **MODO EDICIÓN**\n\n"
-                "Responde a ESTE mensaje con el texto que quieres publicar.\n\n"
-                f"Texto original:\n{await limpiar_texto(mensaje_orig.message) or '(Sin texto)'}\n\n"
-                "Comandos:\n"
-                "/publicar - Publicar tu versión editada\n"
-                "/cancelar - Volver al menú"
-            )
-            
-            # Marcar como en edición
-            mensajes_pendientes[msg_id]['editando'] = True
-        
-        elif accion == "del":
-            await event.edit("❌ Descartado")
-            del mensajes_pendientes[msg_id]
-
-    @client.on(events.NewMessage(chats='me', incoming=True))
-    async def mensaje_editado(event):
-        """Captura tu respuesta para editar el mensaje"""
-        if event.message.message.startswith('/'):
+            await client.send_message('me', "✅ Publicado automáticamente")
             return
-        
-        # Buscar si hay algún mensaje en modo edición
-        for msg_id, data in mensajes_pendientes.items():
-            if data.get('editando'):
-                # Guardar texto editado
-                mensajes_pendientes[msg_id]['texto_editado'] = event.message.message
-                mensajes_pendientes[msg_id]['editando'] = False
-                
-                botones = [
-                    [Button.inline("✅ PUBLICAR EDITADO", f"pubedit_{msg_id}")],
-                    [Button.inline("❌ CANCELAR", f"del_{msg_id}")]
-                ]
-                
-                await event.reply(
-                    f"✏️ **Mensaje editado:**\n\n{event.message.message}\n\n¿Publicar?",
-                    buttons=botones
-                )
-                break
+        mensajes_pendientes[msg_id] = {'chat_id': chat_id, 'mensaje': event.message}
+        ultimo_msg_id = msg_id
+        texto_limpio = await limpiar_texto(event.message.message)
+        preview = texto_limpio if texto_limpio else "📷 Multimedia"
+        await client.send_message('me', f"{preview}\n\n━━━━━━━━━━━━━━━\nResponde:\n✅ = Publicar\n✏️ = Editar\n❌ = Rechazar", link_preview=False)
 
-    @client.on(events.CallbackQuery(pattern=b'pubedit_'))
-    async def publicar_editado(event):
-        msg_id = int(event.data.decode().split('_')[1])
-        
-        if msg_id not in mensajes_pendientes:
-            await event.answer("⚠️ Mensaje expirado", alert=True)
-            return
-        
-        texto_editado = mensajes_pendientes[msg_id].get('texto_editado', '')
-        texto_final = texto_editado + MI_FIRMA
-        
-        mensaje_orig = mensajes_pendientes[msg_id]['mensaje']
-        
-        # Publicar
-        if mensaje_orig.media:
-            await client.send_file(tu_canal, mensaje_orig.media, caption=texto_final)
-        else:
-            await client.send_message(tu_canal, texto_final)
-        
-        await event.edit("✅ ¡Versión editada publicada!")
-        del mensajes_pendientes[msg_id]
+    @client.on(events.NewMessage(chats='me', outgoing=True))
+    async def respuesta_usuario(event):
+        global ultimo_msg_id
+        texto = event.message.message.strip()
+        if texto in ['✅', 'si', 's', 'ok', 'publicar', '1']:
+            if not ultimo_msg_id or ultimo_msg_id not in mensajes_pendientes:
+                return
+            msg_data = mensajes_pendientes[ultimo_msg_id]
+            mensaje_orig = msg_data['mensaje']
+            texto_limpio = await limpiar_texto(mensaje_orig.message)
+            texto_final = (texto_limpio + MI_FIRMA) if texto_limpio else MI_FIRMA
+            if mensaje_orig.media:
+                await client.send_file(tu_canal, mensaje_orig.media, caption=texto_final if texto_final != MI_FIRMA else None)
+            else:
+                await client.send_message(tu_canal, texto_final)
+            await event.reply("✅ Publicado en tu canal!")
+            del mensajes_pendientes[ultimo_msg_id]
+            ultimo_msg_id = None
+        elif texto in ['❌', 'no', 'n', 'rechazar', '0']:
+            if ultimo_msg_id and ultimo_msg_id in mensajes_pendientes:
+                await event.reply("❌ Descartado")
+                del mensajes_pendientes[ultimo_msg_id]
+                ultimo_msg_id = None
+        elif texto in ['✏️', 'editar', 'e', '2']:
+            if ultimo_msg_id and ultimo_msg_id in mensajes_pendientes:
+                mensajes_pendientes[ultimo_msg_id]['editando'] = True
+                await event.reply("✏️ Modo edición activado\n\nEscribe tu versión del texto y luego responde ✅ para publicar")
+        elif ultimo_msg_id and ultimo_msg_id in mensajes_pendientes:
+            if mensajes_pendientes[ultimo_msg_id].get('editando'):
+                mensajes_pendientes[ultimo_msg_id]['texto_editado'] = texto
+                mensajes_pendientes[ultimo_msg_id]['editando'] = False
+                await event.reply(f"✏️ Texto guardado:\n\n{texto}\n\nResponde ✅ para publicar o ❌ para cancelar")
 
     await client.start()
-    print("🚀 Bot de reenvío con aprobación activado!")
-    print("✏️ Modo edición habilitado")
-    print("📱 Revisa tus 'Mensajes Guardados' en Telegram")
+    print("🚀 Bot de reenvío activado!")
+    print("💬 Sistema de comandos simples activo")
     await client.run_until_disconnected()
 
 asyncio.run(main())
