@@ -51,29 +51,28 @@ async def main():
         
         # Preparar vista previa
         texto_limpio = await limpiar_texto(event.message.message)
-        
-        if texto_limpio:
-            preview = f"📝 MENSAJE NUEVO:\n\n{texto_limpio[:200]}..."
-        else:
-            preview = "📷 Archivo multimedia recibido"
-        
-        # Botones inline (estos SÍ funcionan)
-        botones = [
-            [
-                Button.inline("✅ PUBLICAR", f"pub_{msg_id}"),
-                Button.inline("✏️ EDITAR", f"edit_{msg_id}")
-            ],
-            [
-                Button.inline("❌ DESCARTAR", f"del_{msg_id}")
-            ]
-        ]
-        
-        await client.send_message(
-            'me',
-            preview + f"\n\n🔹 De: {event.chat.title if hasattr(event.chat, 'title') else 'Canal'}",
-            buttons=botones,
-            link_preview=False
-        )
+
+if texto_limpio:
+    preview = texto_limpio  # Sin "MENSAJE NUEVO"
+else:
+    preview = "📷 Multimedia"
+
+botones = [
+    [
+        Button.inline("✅ PUBLICAR", f"pub_{msg_id}"),
+        Button.inline("✏️ EDITAR", f"edit_{msg_id}")
+    ],
+    [
+        Button.inline("❌ DESCARTAR", f"del_{msg_id}")
+    ]
+]
+
+await client.send_message(
+    'me',
+    preview,  # Sin la marca "De: Canal"
+    buttons=botones,
+    link_preview=False
+)
 
     @client.on(events.CallbackQuery)
     async def callback(event):
