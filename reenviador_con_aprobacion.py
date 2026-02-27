@@ -16,6 +16,7 @@ auto_env = os.getenv('CANALES_AUTOMATICOS', '')
 CANALES_AUTOMATICOS = [int(x.strip()) for x in auto_env.split(',') if x.strip()] if auto_env else []
 
 mensajes_pendientes = {}
+stats = {'aprobados': 0, 'rechazados': 0}
 
 async def limpiar_texto(texto):
     if not texto:
@@ -29,19 +30,143 @@ async def limpiar_texto(texto):
     return texto.strip()
 
 async def main():
-    # Cliente principal (userbot para leer canales)
     client = TelegramClient('reenviador', api_id, api_hash)
-    
-    # Bot para enviar con botones
     bot = TelegramClient('bot', api_id, api_hash)
     await bot.start(bot_token=bot_token)
+
+    # ==================== COMANDOS ====================
+    
+    @bot.on(events.NewMessage(pattern='/start'))
+    async def cmd_start(event):
+        if event.chat_id != mi_chat_id:
+            return
+        await event.reply(
+            "🤖 **Bot de Reenvío Activo**\n\n"
+            "**Comandos disponibles:**\n"
+            "/buscar [texto] - Buscar en canales\n"
+            "/ultimos - Ver últimos 5 mensajes\n"
+            "/canales - Ver canales monitoreados\n"
+            "/pendientes - Ver mensajes pendientes\n"
+            "/stats - Ver estadísticas\n"
+            "/test - Probar conexión"
+        )
+
+    @bot.on(events.NewMessage(pattern='/test'))
+    async def cmd_test(event):
+        if event.chat_id != mi_chat_id:
+            return
+        await event.reply("✅ Bot funcionando correctamente!")
+
+    @bot.on(events.NewMessage(pattern='/canales'))
+    async def cmd_canales(event):
+        if event.chat_id != mi_chat_id:
+            return
+        
+        texto = "📡 **Canales monitoreados:**\n\n"
+        for i, canal_id in enumerate(canales_origen, 1):
+            try:
+                canal = await client.get_entity(canal_id)
+                nombre = canal.title if hasattr(canal, 'title') else str(canal_id)
+                texto += f"{i}. {nombre}\n"
+            except:
+                texto += f"{i}. ID: {canal_id}\n"
+        
+        await event.reply(texto)
+
+    @bot.on(events.NewMessage(pattern='/pendientes'))
+    async def cmd_pendientes(event):
+        if event.chat_id != mi_chat_id:
+            return
+        
+        cantidad = len(mensajes_pendientes)
+        if cantidad == 0:
+            await event.reply("📭 No hay mensajes pendientes")
+        else:
+            await event.reply(f"📬 Tienes **{cantidad}** mensaje(s) pendiente(s)")
+
+    @bot.on(events.NewMessage(pattern='/stats'))
+    async def cmd_stats(event):
+        if event.chat_id != mi_chat_id:
+            return
+        
+        await event.reply(
+            f"📊 **Estadísticas:**\n\n"
+            f"✅ Aprobados: {stats['aprobados']}\n"
+            f"❌ Rechazados: {stats['rechazados']}\n"
+            f"📬 Pendientes: {len(mensajes_pendientes)}"
+        )
+
+    @bot.on(events.NewMessage(pattern='/ultimos'))
+    async def cmd_ultimos(event):
+        if event.chat_id != mi_chat_id:
+            return
+        
+        await event.reply("🔍 Buscando últimos mensajes...")
+        
+        for canal_id in canales_origen[:3]:
+            try:
+                canal = await client.get_entity(canal_id)
+                nombre = canal.title if hasattr(canal, 'title') else str(canal_id)
+                
+                texto = f"📢 **{nombre}:**\n\n"
+                
+                async for msg in client.iter_messages(canal_id, limit=3):
+                    if msg.message:
+                        preview = msg.message[:100] + "..." if len(msg.message) > 100 else msg.message
+                        texto += f"• {preview}\n\n"
+                
+                await bot.send_message(mi_chat_id, texto)
+            except Exception as e:
+                await bot.send_message(mi_chat_id, f"❌ Error con canal {canal_id}: {e}")
+
+    @bot.on(events.NewMessage(pattern=r'/buscar (.+)'))
+    async def cmd_buscar(event):
+        if event.chat_id != mi_chat_id:
+            return
+        
+        palabra = event.pattern_match.group(1)
+        await event.reply(f"🔍 Buscando: **{palabra}**...")
+        
+        encontrados = 0
+        
+        for canal_id in canales_origen:
+            try:
+                async for msg in client.iter_messages(canal_id, limit=20, search=palabra):
+                    if msg.message and encontrados < 5:
+                        texto_limpio = await limpiar_texto(msg.message)
+                        preview = texto_limpio[:300] if texto_limpio else "📷 Multimedia"
+                        
+                        mensajes_pendientes[msg.id] = {
+                            'chat_id': canal_id,
+                            'mensaje': msg
+                        }
+                        
+                        botones = [
+                            [Button.inline("✅ PUBLICAR", f"pub_{msg.id}")],
+                            [Button.inline("❌ RECHAZAR", f"del_{msg.id}")]
+                        ]
+                        
+                        if msg.media:
+                            await bot.send_file(mi_chat_id, msg.media, caption=preview, buttons=botones)
+                        else:
+                            await bot.send_message(mi_chat_id, preview, buttons=botones)
+                        
+                        encontrados += 1
+            except:
+                pass
+        
+        if encontrados == 0:
+            await event.reply(f"❌ No se encontró: {palabra}")
+        else:
+            await event.reply(f"✅ Encontrados: {encontrados} mensaje(s)")
+
+    # ==================== EVENTOS DE CANALES ====================
 
     @client.on(events.NewMessage(chats=canales_origen))
     async def nuevo_mensaje(event):
         msg_id = event.message.id
         chat_id = event.chat_id
         
-        # Modo automático
         if chat_id in CANALES_AUTOMATICOS:
             texto_limpio = await limpiar_texto(event.message.message)
             texto_final = (texto_limpio + MI_FIRMA) if texto_limpio else ""
@@ -52,27 +177,25 @@ async def main():
                 await client.send_message(tu_canal, texto_final)
             return
         
-        # Guardar mensaje
         mensajes_pendientes[msg_id] = {
             'chat_id': chat_id,
             'mensaje': event.message
         }
         
-        # Preparar preview
         texto_limpio = await limpiar_texto(event.message.message)
         preview = texto_limpio[:500] if texto_limpio else "📷 Multimedia"
         
-        # Botones
         botones = [
             [Button.inline("✅ PUBLICAR", f"pub_{msg_id}")],
             [Button.inline("❌ RECHAZAR", f"del_{msg_id}")]
         ]
         
-        # Enviar al bot con botones
         if event.message.media:
             await bot.send_file(mi_chat_id, event.message.media, caption=preview, buttons=botones)
         else:
             await bot.send_message(mi_chat_id, preview, buttons=botones)
+
+    # ==================== BOTONES ====================
 
     @bot.on(events.CallbackQuery)
     async def callback(event):
@@ -96,18 +219,19 @@ async def main():
                 await client.send_message(tu_canal, texto_final)
             
             await event.edit("✅ ¡Publicado!")
+            stats['aprobados'] += 1
             del mensajes_pendientes[msg_id]
         
         elif accion == "del":
             await event.edit("❌ Descartado")
+            stats['rechazados'] += 1
             del mensajes_pendientes[msg_id]
 
-await client.start()
-print("🚀 Bot activo con botones!")
-
-# Mensaje de prueba
-await bot.send_message(mi_chat_id, "✅ Bot iniciado correctamente y conectado!")
-
-await client.run_until_disconnected()
+    await client.start()
+    print("🚀 Bot activo con botones y comandos!")
+    
+    await bot.send_message(mi_chat_id, "✅ Bot iniciado correctamente!")
+    
+    await client.run_until_disconnected()
 
 asyncio.run(main())
