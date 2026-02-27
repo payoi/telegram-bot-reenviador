@@ -96,28 +96,45 @@ async def main():
             f"📬 Pendientes: {len(mensajes_pendientes)}"
         )
 
-    @bot.on(events.NewMessage(pattern='/ultimos'))
-    async def cmd_ultimos(event):
-        if event.chat_id != mi_chat_id:
-            return
-        
-        await event.reply("🔍 Buscando últimos mensajes...")
-        
-        for canal_id in canales_origen[:3]:
-            try:
-                canal = await client.get_entity(canal_id)
-                nombre = canal.title if hasattr(canal, 'title') else str(canal_id)
+@bot.on(events.NewMessage(pattern='/ultimos'))
+async def cmd_ultimos(event):
+    if event.chat_id != mi_chat_id:
+        return
+    
+    await event.reply("🔍 Buscando últimos mensajes...")
+    
+    for canal_id in canales_origen:
+        try:
+            canal = await client.get_entity(canal_id)
+            nombre = canal.title if hasattr(canal, 'title') else str(canal_id)
+            
+            await bot.send_message(mi_chat_id, f"📢 **{nombre}:**")
+            
+            async for msg in client.iter_messages(canal_id, limit=3):
+                texto_limpio = await limpiar_texto(msg.message) if msg.message else ""
+                preview = texto_limpio[:800] if texto_limpio else "📷 Multimedia"
                 
-                texto = f"📢 **{nombre}:**\n\n"
+                mensajes_pendientes[msg.id] = {
+                    'chat_id': canal_id,
+                    'mensaje': msg
+                }
                 
-                async for msg in client.iter_messages(canal_id, limit=3):
-                    if msg.message:
-                        preview = msg.message[:100] + "..." if len(msg.message) > 100 else msg.message
-                        texto += f"• {preview}\n\n"
+                botones = [
+                    [Button.inline("✅ PUBLICAR", f"pub_{msg.id}")],
+                    [Button.inline("❌ RECHAZAR", f"del_{msg.id}")]
+                ]
                 
-                await bot.send_message(mi_chat_id, texto)
-            except Exception as e:
-                await bot.send_message(mi_chat_id, f"❌ Error con canal {canal_id}: {e}")
+                if msg.media:
+                    await bot.send_file(mi_chat_id, msg.media, caption=preview, buttons=botones)
+                else:
+                    await bot.send_message(mi_chat_id, preview, buttons=botones)
+                
+                await asyncio.sleep(0.5)  # Evitar flood
+                
+        except Exception as e:
+            await bot.send_message(mi_chat_id, f"❌ Error: {e}")
+    
+    await bot.send_message(mi_chat_id, "✅ Listo!")
 
     @bot.on(events.NewMessage(pattern=r'/buscar (.+)'))
     async def cmd_buscar(event):
