@@ -42,19 +42,18 @@ async def main():
                 await client.send_file(tu_canal, event.message.media, caption=texto_final if texto_final != MI_FIRMA else None)
             else:
                 await client.send_message(tu_canal, texto_final)
-            await client.send_message('me', "✅ Publicado automáticamente")
             return
         mensajes_pendientes[msg_id] = {'chat_id': chat_id, 'mensaje': event.message}
         ultimo_msg_id = msg_id
         texto_limpio = await limpiar_texto(event.message.message)
         preview = texto_limpio if texto_limpio else "📷 Multimedia"
-        await client.send_message('me', f"{preview}\n\n━━━━━━━━━━━━━━━\nResponde:\n✅ = Publicar\n✏️ = Editar\n❌ = Rechazar", link_preview=False)
+        await client.send_message('me', preview, link_preview=False)
 
     @client.on(events.NewMessage(chats='me', outgoing=True))
     async def respuesta_usuario(event):
         global ultimo_msg_id
-        texto = event.message.message.strip()
-        if texto in ['✅', 'si', 's', 'ok', 'publicar', '1']:
+        texto = event.message.message.strip().lower()
+        if texto in ['si', 's', 'ok', '1']:
             if not ultimo_msg_id or ultimo_msg_id not in mensajes_pendientes:
                 return
             msg_data = mensajes_pendientes[ultimo_msg_id]
@@ -65,27 +64,17 @@ async def main():
                 await client.send_file(tu_canal, mensaje_orig.media, caption=texto_final if texto_final != MI_FIRMA else None)
             else:
                 await client.send_message(tu_canal, texto_final)
-            await event.reply("✅ Publicado en tu canal!")
+            await event.reply("✅ Publicado!")
             del mensajes_pendientes[ultimo_msg_id]
             ultimo_msg_id = None
-        elif texto in ['❌', 'no', 'n', 'rechazar', '0']:
+        elif texto in ['no', 'n', '0']:
             if ultimo_msg_id and ultimo_msg_id in mensajes_pendientes:
                 await event.reply("❌ Descartado")
                 del mensajes_pendientes[ultimo_msg_id]
                 ultimo_msg_id = None
-        elif texto in ['✏️', 'editar', 'e', '2']:
-            if ultimo_msg_id and ultimo_msg_id in mensajes_pendientes:
-                mensajes_pendientes[ultimo_msg_id]['editando'] = True
-                await event.reply("✏️ Modo edición activado\n\nEscribe tu versión del texto y luego responde ✅ para publicar")
-        elif ultimo_msg_id and ultimo_msg_id in mensajes_pendientes:
-            if mensajes_pendientes[ultimo_msg_id].get('editando'):
-                mensajes_pendientes[ultimo_msg_id]['texto_editado'] = texto
-                mensajes_pendientes[ultimo_msg_id]['editando'] = False
-                await event.reply(f"✏️ Texto guardado:\n\n{texto}\n\nResponde ✅ para publicar o ❌ para cancelar")
 
     await client.start()
-    print("🚀 Bot de reenvío activado!")
-    print("💬 Sistema de comandos simples activo")
+    print("🚀 Bot activo!")
     await client.run_until_disconnected()
 
 asyncio.run(main())
