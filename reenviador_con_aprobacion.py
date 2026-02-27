@@ -111,25 +111,31 @@ async def cmd_ultimos(event):
             await bot.send_message(mi_chat_id, f"📢 **{nombre}:**")
             
             async for msg in client.iter_messages(canal_id, limit=3):
-                texto_limpio = await limpiar_texto(msg.message) if msg.message else ""
-                preview = texto_limpio[:800] if texto_limpio else "📷 Multimedia"
-                
-                mensajes_pendientes[msg.id] = {
-                    'chat_id': canal_id,
-                    'mensaje': msg
-                }
-                
-                botones = [
-                    [Button.inline("✅ PUBLICAR", f"pub_{msg.id}")],
-                    [Button.inline("❌ RECHAZAR", f"del_{msg.id}")]
-                ]
-                
-                if msg.media:
-                    await bot.send_file(mi_chat_id, msg.media, caption=preview, buttons=botones)
-                else:
-                    await bot.send_message(mi_chat_id, preview, buttons=botones)
-                
-                await asyncio.sleep(0.5)  # Evitar flood
+                try:
+                    texto_limpio = await limpiar_texto(msg.message) if msg.message else ""
+                    preview = texto_limpio[:800] if texto_limpio else "📷 Multimedia"
+                    
+                    mensajes_pendientes[msg.id] = {
+                        'chat_id': canal_id,
+                        'mensaje': msg
+                    }
+                    
+                    botones = [
+                        [Button.inline("✅ PUBLICAR", f"pub_{msg.id}")],
+                        [Button.inline("❌ RECHAZAR", f"del_{msg.id}")]
+                    ]
+                    
+                    if msg.media:
+                        try:
+                            await bot.send_file(mi_chat_id, msg.media, caption=preview, buttons=botones)
+                        except:
+                            await bot.send_message(mi_chat_id, preview + "\n\n⚠️ (Multimedia no disponible)", buttons=botones)
+                    else:
+                        await bot.send_message(mi_chat_id, preview, buttons=botones)
+                    
+                    await asyncio.sleep(0.5)
+                except:
+                    pass
                 
         except Exception as e:
             await bot.send_message(mi_chat_id, f"❌ Error: {e}")
