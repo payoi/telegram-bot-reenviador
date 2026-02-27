@@ -102,9 +102,12 @@ async def main():
             await event.edit("❌ Descartado")
             del mensajes_pendientes[msg_id]
 
-    await client.start()
-    print("🚀 Bot activo con botones!")
-    
-    await client.run_until_disconnected()
+await client.start()
+print("🚀 Bot activo con botones!")
+
+# Mensaje de prueba
+await bot.send_message(mi_chat_id, "✅ Bot iniciado correctamente y conectado!")
+
+await client.run_until_disconnected()
 
 asyncio.run(main())
