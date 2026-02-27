@@ -19,9 +19,19 @@ ultimo_msg_id = None
 async def limpiar_texto(texto):
     if not texto:
         return ""
+    
+    # Eliminar menciones (@usuario, @canal)
     texto = re.sub(r'@\w+', '', texto)
-    texto = re.sub(r'https?://t\.me/\S+', '', texto)
+    
+    # Eliminar TODOS los enlaces (http, https, www, t.me, etc.)
+    texto = re.sub(r'https?://\S+', '', texto)  # http:// y https://
+    texto = re.sub(r'www\.\S+', '', texto)      # www.ejemplo.com
+    texto = re.sub(r't\.me/\S+', '', texto)     # t.me/canal
+    
+    # Eliminar espacios múltiples
     texto = re.sub(r'\n{3,}', '\n\n', texto)
+    texto = re.sub(r'  +', ' ', texto)
+    
     return texto.strip()
 
 async def main():
