@@ -1,0 +1,6 @@
+*.session
+*.session-journal
+__pycache__/
+*.pyc
+canales_origen.json
+canales_automaticos.json
